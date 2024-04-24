@@ -4386,38 +4386,59 @@ def scatter_add_sample_generator(op, device, dtype, requires_grad, **kwargs):
     # torch.scatter_add expects index to be long but not int
     # Index is not differentiable! Marking requires_grad as False
     make_index = partial(make_tensor, device=device, dtype=torch.long, requires_grad=False)
-    # Not sure if we need to consider higher order gradient, marking requires_grad as False
-    make_source = partial(make_tensor, device=device, dtype=dtype, requires_grad=False)
+    make_source = partial(make_tensor, device=device, dtype=dtype, requires_grad=requires_grad)
 
-    for shape_a, dim, shape_b in take_along_axis_cases:
-        canonicalized_dim = dim if dim >= 0 else dim + len(shape_a)
-        shape_source = list(shape_a)
-        shape_source[canonicalized_dim] = shape_b[canonicalized_dim]
-        a = make(shape_a)
-        b = make_index(shape_b, low=0, high=shape_a[dim])
-        c = make_source(shape_source)
-        yield SampleInput(a, index=b, src=c, dim=dim)
+    # NOTE The value gradient is only valid when src.shape == index.shape.
+    if requires_grad:
+        for shape_a, dim, shape_b in take_along_axis_cases:
+            canonicalized_dim = dim if dim >= 0 else dim + len(shape_a)
+            a = make(shape_a)
+            b = make_index(shape_b, low=0, high=shape_a[dim])
+            c = make_source(shape_b)
+            yield SampleInput(a, index=b, src=c, dim=dim)
 
-    # Questionable use case. Do we want to support these?!
-    # Note that scatter_add doesn't have the broadcast requirement, it only requires
-    # 1. a.shape[i]      >= index.shape[i] for i != dim
-    # 2. source.shape[i] >= index.shape[i] for all i
-    #
-    # a.shape, dim, index.shape, source.shape
-    scatter_add_cases = (
-        ((4, 5, 3), 0, (3, 2, 3), (4, 3, 9)),
-        ((4, 5, 3), 1, (3, 5, 2), (3, 8, 8)),
-        ((4, 5, 3), 2, (3, 2, 8), (5, 8, 8)),
-    )
-    for shape_a, dim, shape_b, shape_source in scatter_add_cases:
-        a = make(shape_a)
-        b = make_index(shape_b, low=0, high=shape_a[dim])
-        c = make_source(shape_source)
-        yield SampleInput(a, index=b, src=c, dim=dim)
+        # a.shape, dim, index.shape
+        scatter_add_cases = (
+            ((4, 5, 3), 0, (3, 2, 3)),
+            ((4, 5, 3), 1, (3, 5, 2)),
+            ((4, 5, 3), 2, (3, 2, 8)),
+        )
+        for shape_a, dim, shape_b in scatter_add_cases:
+            a = make(shape_a)
+            b = make_index(shape_b, low=0, high=shape_a[dim])
+            c = make_source(shape_b)
+            yield SampleInput(a, index=b, src=c, dim=dim)
+    else:
+        for shape_a, dim, shape_b in take_along_axis_cases:
+            canonicalized_dim = dim if dim >= 0 else dim + len(shape_a)
+            shape_source = list(shape_a)
+            shape_source[canonicalized_dim] = shape_b[canonicalized_dim]
+            a = make(shape_a)
+            b = make_index(shape_b, low=0, high=shape_a[dim])
+            c = make_source(shape_source)
+            yield SampleInput(a, index=b, src=c, dim=dim)
+
+        # Questionable use case. Do we want to support these?!
+        # Note that scatter_add doesn't have the broadcast requirement, it only requires
+        # 1. a.shape[i]      >= index.shape[i] for i != dim
+        # 2. source.shape[i] >= index.shape[i] for all i
+        #
+        # a.shape, dim, index.shape, source.shape
+        scatter_add_cases = (
+            ((4, 5, 3), 0, (3, 2, 3), (4, 3, 9)),
+            ((4, 5, 3), 1, (3, 5, 2), (3, 8, 8)),
+            ((4, 5, 3), 2, (3, 2, 8), (5, 8, 8)),
+        )
+        for shape_a, dim, shape_b, shape_source in scatter_add_cases:
+            a = make(shape_a)
+            b = make_index(shape_b, low=0, high=shape_a[dim])
+            c = make_source(shape_source)
+            yield SampleInput(a, index=b, src=c, dim=dim)
 
 
 scatter_add_opinfo = OpInfo(
     ltorch.scatter_add,
+    supports_grad=True,
     sample_input_generator=scatter_add_sample_generator,
     torch_reference=torch.scatter_add,
     test_directives=(
