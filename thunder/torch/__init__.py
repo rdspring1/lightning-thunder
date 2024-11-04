@@ -503,11 +503,6 @@ def cuda(
     non_blocking: bool = False,
     memory_format: None | torch.memory_format = None,
 ) -> TensorLike:
-    # Modeled similar to PyTorch:
-    # https://github.com/pytorch/pytorch/blob/e3ac61587aa368c613ef01df1f328a396b64cd5d/tools/autograd/templates/python_variable_methods.cpp#L496-L501
-    # If `device` is None, this function defaults `device` to current CUDA device
-    # and delegates actual data-movement and layout ordering to `Tensor.to`.
-
     # NOTE: `Tensor.to` doesn't model `non_blocking` currently.
     utils.check(not non_blocking, lambda: "cuda(): `non_blocking==True` is currently not supported.")
 
