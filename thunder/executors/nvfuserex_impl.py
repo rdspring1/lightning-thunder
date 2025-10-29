@@ -77,6 +77,7 @@ if nvfuser_version() >= DIRECT_BINDINGS_SUPPORTED_VERSION:
     from nvfuser_direct import (
         DataType,
         FusionDefinition,
+        LruFusionCache,
         multidevice,
         ParallelType,
         execute_with_dtensors,
@@ -297,6 +298,15 @@ def multidevice_schedule(fd: FusionDefinition, in_dtensors: list[Proxy]) -> None
             in_tv.set_allocation_domain(in_tv.get_loop_domain(), new_contiguity=True)
 
 
+# This function wraps nvfuser_direct's LruFusionCache with a version check.
+def FusionCacheDecorator(func: callable):
+    # For legacy bindings, the decorator does nothin.
+    if nvfuser_version() < DIRECT_BINDINGS_SUPPORTED_VERSION:
+        return func
+    from nvfuser_direct import LruFusionCache
+    return LruFusionCache(max_fusions=16384)(func)
+
+@FusionCacheDecorator
 def create_fd(
     bsyms: list[BoundSymbol],
     input_descriptors: Sequence[type | tuple[tuple[int, ...], tuple[bool, ...], tuple[int, ...]]],
